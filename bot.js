@@ -20,7 +20,7 @@ const targetList = fs.readFileSync("target-list.txt", "utf8").split(LINE_BREAKS)
 let defaultMove;
 let guardedPlayer;
 let guarding = true;
-let chestLocation;
+const chests = {};
 
 function getPathDuration(path) {
 	return path.cost; // TODO: calculate duration of path (in seconds)
@@ -206,17 +206,18 @@ bot.commands = {
 		const subcommand = args[0];
 
 		if (subcommand === 'chest') {
-			const coords = args.slice(1);
-			if (coords.length === 3) {
-				const [x, y, z] = coords.map(Number);
+			const params = args.slice(1);
+			if (params.length === 4) {
+				const name = params[3];
+				const [x, y, z] = params.slice(0, 3).map(Number);
 				if ([x, y, z].some(isNaN)) {
-					log('Usage: set chest <x> <y> <z>');
+					log('Usage: set chest <x> <y> <z> <name>');
 					return;
 				}
-				chestLocation = new Vec3(x, y, z);
-				log(`Chest location set to ${chestLocation}`);
+				chests[name] = new Vec3(x, y, z);
+				log(`Chest '${name}' set to ${chests[name]}`);
 			} else {
-				log('Usage: set chest <x> <y> <z>');
+				log('Usage: set chest <x> <y> <z> <name>');
 			}
 		} else {
 			log("Unknown set command. Available: chest");
@@ -225,12 +226,20 @@ bot.commands = {
 
 	"unload": async function(...args) {
 		const { log } = args.pop();
-		if (!chestLocation) {
-			log("Chest location not set. Use 'set chest <x> <y> <z>'.");
+		const name = args[0];
+
+		if (!name) {
+			log("Usage: unload <name>");
 			return;
 		}
 
-		log("Unloading...");
+		const chestLocation = chests[name];
+		if (!chestLocation) {
+			log(`Chest '${name}' not found. Use 'set chest <x> <y> <z> <name>' to define it.`);
+			return;
+		}
+
+		log(`Unloading to chest '${name}'...`);
 		const originalGuarding = guarding;
 		guarding = false; // Stop guarding while unloading
 
@@ -259,7 +268,7 @@ bot.commands = {
 				for (const item of items) {
 					await chest.deposit(item.type, null, item.count);
 				}
-				log("Unloaded all items into the chest.");
+				log(`Unloaded all items into chest '${name}'.`);
 			}
 			chest.close();
 		} catch (err) {
