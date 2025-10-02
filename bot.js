@@ -193,6 +193,19 @@ async function loop() {
 		return;
 	}
 
+	if (!guardedPlayer || !guardedPlayer.entity) {
+        guardedPlayer = null; // Reset guardedPlayer if entity is gone
+        // Try to find a new boss
+        const foundBoss = bot.nearestEntity((entity) => bossList.includes(entity.username));
+        if (foundBoss) {
+            guardedPlayer = bot.players[foundBoss.username];
+        } else {
+            // No boss found, clear goal and wait.
+            bot.pathfinder.setGoal(null);
+        }
+        return; // End the loop for this tick.
+    }
+
 	let goal = new goals.GoalFollow(guardedPlayer.entity, 4);
 	try {
 		await bot.pathfinder.goto(goal);
@@ -411,27 +424,10 @@ bot.once("spawn", async ()=>{
         }
     }
 
-	bot.chat("I'm a robot.");
+	bot.chat("I have awoken.");
 	
 	defaultMove = new Movements(bot);
 	bot.pathfinder.setMovements(defaultMove);
-
-	// find a boss
-	while (true) {
-		let foundBoss = bot.nearestEntity((entity)=>{
-			return bossList.includes(entity.username);
-		});
-
-		if (foundBoss) {
-			guardedPlayer = bot.players[foundBoss.username];
-			break;
-		}
-
-		const enemy = findThreat();
-		if (enemy) await attackEnemy(enemy);
-
-		await bot.waitForTicks(5);
-	}
 
 	// protect boss
 	while (true) {
