@@ -1,6 +1,7 @@
 const mineflayer = require('mineflayer');
 const fs = require('fs');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const { Vec3 } = require('vec3');
 
 const meleePlugin = require('./melee.js');
 const archeryPlugin = require('./archery.js');
@@ -19,6 +20,7 @@ const targetList = fs.readFileSync("target-list.txt", "utf8").split(LINE_BREAKS)
 let defaultMove;
 let guardedPlayer;
 let guarding = true;
+let chestLocation;
 
 function getPathDuration(path) {
 	return path.cost; // TODO: calculate duration of path (in seconds)
@@ -112,9 +114,12 @@ async function attackEnemy(enemy) {
 		let goal = new goals.GoalFollow(enemy, 4);
 		await bot.melee.equip();
 
-		await bot.pathfinder.goto(goal);
-
-		await bot.melee.punch(enemy);
+		try {
+			await bot.pathfinder.goto(goal);
+			await bot.melee.punch(enemy);
+		} catch (err) {
+			// ignore pathfinding errors
+		}
 	}
 }
 
@@ -129,7 +134,11 @@ async function loop() {
 	}
 
 	let goal = new goals.GoalFollow(guardedPlayer.entity, 4);
-	await bot.pathfinder.goto(goal);
+	try {
+		await bot.pathfinder.goto(goal);
+	} catch (err) {
+		// ignore pathfinding errors
+	}
 }
 
 async function eatFood(log=sendMessage) {
@@ -189,6 +198,75 @@ bot.commands = {
 		log("Stopping.");
 		bot.pathfinder.setGoal(null);
 		guarding = false;
+	},
+
+	"set": async function(...args) {
+		const context = args.pop();
+		const { log } = context;
+		const subcommand = args[0];
+
+		if (subcommand === 'chest') {
+			const coords = args.slice(1);
+			if (coords.length === 3) {
+				const [x, y, z] = coords.map(Number);
+				if ([x, y, z].some(isNaN)) {
+					log('Usage: set chest <x> <y> <z>');
+					return;
+				}
+				chestLocation = new Vec3(x, y, z);
+				log(`Chest location set to ${chestLocation}`);
+			} else {
+				log('Usage: set chest <x> <y> <z>');
+			}
+		} else {
+			log("Unknown set command. Available: chest");
+		}
+	},
+
+	"unload": async function(...args) {
+		const { log } = args.pop();
+		if (!chestLocation) {
+			log("Chest location not set. Use 'set chest <x> <y> <z>'.");
+			return;
+		}
+
+		log("Unloading...");
+		const originalGuarding = guarding;
+		guarding = false; // Stop guarding while unloading
+
+		try {
+			const goal = new goals.GoalNear(chestLocation.x, chestLocation.y, chestLocation.z, 1);
+			await bot.pathfinder.goto(goal);
+		} catch (err) {
+			log(`Could not pathfind to chest: ${err.message}`);
+			guarding = originalGuarding; // Resume guarding if failed
+			return;
+		}
+
+		const chestBlock = bot.blockAt(chestLocation);
+		if (!chestBlock || !chestBlock.name.includes('chest')) {
+			log("No chest at the specified location.");
+			guarding = originalGuarding; // Resume guarding
+			return;
+		}
+
+		try {
+			const chest = await bot.openChest(chestBlock);
+			const items = bot.inventory.items();
+			if (items.length === 0) {
+				log("Inventory is empty.");
+			} else {
+				for (const item of items) {
+					await chest.deposit(item.type, null, item.count);
+				}
+				log("Unloaded all items into the chest.");
+			}
+			chest.close();
+		} catch (err) {
+			log(`Error while unloading: ${err.message}`);
+		}
+
+		guarding = originalGuarding; // Resume guarding
 	},
 };
 
