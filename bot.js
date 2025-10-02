@@ -86,13 +86,34 @@ async function attackEnemy(enemy) {
 	const timeToDrawBow = 4;
 
 	if (bot.archery.canShoot() && timeToArrival > timeToDrawBow) {
-		await bot.archery.shoot(enemy);
+		// Only shoot if not already shooting
+		if (!bot.archery.isShooting()) {
+			sendMessage(`Shooting at ${enemy}!`);
+
+			// slow down
+			const slowMove = new Movements(bot);
+			slowMove.allowSprinting = false;
+			bot.pathfinder.setMovements(slowMove);
+
+			const goal = new goals.GoalFollow(enemy, 8);
+			bot.pathfinder.setGoal(goal);
+
+			await bot.archery.shoot(enemy);
+
+			// restore movement speed
+			bot.pathfinder.setMovements(defaultMove);
+		}
 	} else {
+		// Reset shooting state when switching to melee
+		if (bot.archery.isShooting()) {
+			bot.archery.resetShooting();
+		}
+		
 		let goal = new goals.GoalFollow(enemy, 4);
+		await bot.melee.equip();
 
 		await bot.pathfinder.goto(goal);
 
-		await bot.melee.equip();
 		await bot.melee.punch(enemy);
 	}
 }

@@ -1,5 +1,7 @@
 const hawkeye = require('minecrafthawkeye');
 
+let isShooting = false;
+
 function hasArrows(bot) {
 	let arrowItem = bot.registry.itemsByName['arrow'];
 	let arrows = bot.inventory.count(arrowItem.id);
@@ -13,7 +15,16 @@ function hasBow(bot) {
 }
 
 async function shoot(bot, target) {
-	await bot.hawkEye.oneShot(target, "bow");
+	if (isShooting) return;  // Prevent overlapping shots
+	
+	isShooting = true;
+	try {
+		await bot.hawkEye.oneShot(target, "bow");
+		// wait for the bow to be fully drawn before shooting again
+		await bot.waitForTicks(50);
+	} finally {
+		isShooting = false;
+	}
 };
 
 module.exports = (bot)=>{
@@ -30,6 +41,14 @@ module.exports = (bot)=>{
 
 	bot.archery.hasBow = ()=>{
 		return hasBow(bot);
+	};
+
+	bot.archery.isShooting = ()=>{
+		return isShooting;
+	};
+
+	bot.archery.resetShooting = ()=>{
+		isShooting = false;
 	};
 
 	bot.archery.shoot = async (target)=>{
