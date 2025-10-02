@@ -20,6 +20,8 @@ const targetList = fs.readFileSync("target-list.txt", "utf8").split(LINE_BREAKS)
 let defaultMove;
 let guardedPlayer;
 let guarding = true;
+let isFleeing = false;
+let fleeTickCounter = 0;
 const chests = {};
 
 function getPathDuration(path) {
@@ -74,6 +76,7 @@ function findAttacker(position=bot.entity.position) {
 }
 
 async function attackEnemy(enemy) {
+	if (isFleeing) return; // Do not attack while fleeing
 	const pos = bot.entity.position;
 	const enemyGoal = new goals.GoalNear(pos.x, pos.y, pos.z, 4);
 	const pathToBot = bot.pathfinder.getPathFromTo(defaultMove, enemy.position, enemyGoal);
@@ -124,6 +127,63 @@ async function attackEnemy(enemy) {
 }
 
 async function loop() {
+	// Fleeing takes priority over all other actions
+	if (isFleeing) {
+		fleeTickCounter++;
+		if (fleeTickCounter >= 5) {
+			fleeTickCounter = 0; // Reset counter
+
+			const hostiles = Object.values(bot.entities).filter(entity => entity.kind === 'Hostile mobs' && entity.position.distanceTo(bot.entity.position) < 10);
+
+			if (hostiles.length > 0) {
+				// Check for hostiles within 5 radius
+				const hostilesIn5Radius = hostiles.some(hostile => hostile.position.distanceTo(bot.entity.position) < 5);
+
+				if (!hostilesIn5Radius) {
+					// Eat food if no hostiles are within 5 radius
+					if (bot.food < 20) {
+						await eatFood(sendMessage);
+					}
+				}
+
+				// Calculate the center of mass of the hostiles
+				const centerOfMass = hostiles.reduce((acc, hostile) => acc.add(hostile.position), new Vec3(0, 0, 0));
+				centerOfMass.scale(1 / hostiles.length);
+
+				// Calculate a vector pointing from the center of mass to the bot
+				const fleeVector = bot.entity.position.minus(centerOfMass);
+
+				// If the bot is perfectly centered, pick a random direction to flee
+				if (fleeVector.x === 0 && fleeVector.y === 0 && fleeVector.z === 0) {
+					fleeVector.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+				}
+
+				// Normalize and scale the vector to get a target point 24 blocks away
+				const targetPos = bot.entity.position.plus(fleeVector.normalize().scale(24));
+
+				// Create a simple goal to go to that point
+				const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1);
+				bot.pathfinder.setGoal(goal);
+
+				console.log("--- Fleeing Calculation ---");
+				console.log("Is Fleeing:", isFleeing);
+				console.log("Bot Position:", bot.entity.position);
+				console.log("Zombie Position:", hostiles[0].position);
+				console.log("Center of Mass:", centerOfMass);
+				console.log("Flee Vector:", fleeVector);
+				console.log("Target Position:", targetPos);
+			} else {
+				// If no hostiles are nearby anymore, clear the goal.
+				bot.pathfinder.setGoal(null);
+				// Eat food if no hostiles are nearby
+				if (bot.food < 20) {
+					await eatFood(sendMessage);
+				}
+			}
+		}
+		return; // Do nothing else while fleeing
+	}
+
 	if (!guarding) return;
 
 	const enemy = findThreat();
@@ -397,11 +457,24 @@ bot.on("whisper", async (username, message)=>{
 });
 
 bot.on("health", async ()=>{
-	if (bot.food > HUNGER_LIMIT) return;
+	// Handle hunger
+	if (bot.food <= HUNGER_LIMIT) {
+		sendMessage(`hunger has reached ${bot.food}!`);
+		await eatFood();
+	}
 
-	sendMessage(`hunger has reached ${bot.food}!`);
-
-	await eatFood();
+	// Handle fleeing
+	if (bot.health <= 6 && !isFleeing) {
+		sendMessage("Health is critical! Entering runaway mode.");
+		isFleeing = true;
+		guarding = false;
+		bot.pathfinder.setMovements(defaultMove); // Ensure bot can sprint away
+	} else if (isFleeing && bot.health > 15) {
+		sendMessage("Health recovered. Resuming duties.");
+		isFleeing = false;
+		guarding = true;
+		bot.pathfinder.setGoal(null); // Clear the runaway goal
+	}
 });
 
 bot.on("entityGone", (entity)=>{
