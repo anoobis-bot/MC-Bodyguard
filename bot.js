@@ -429,6 +429,9 @@ bot.once("spawn", async ()=>{
 	defaultMove = new Movements(bot);
 	bot.pathfinder.setMovements(defaultMove);
 
+	// Wait for a few seconds before starting the main loop
+	await bot.waitForTicks(100); // 5 seconds
+
 	// protect boss
 	while (true) {
 		await bot.waitForTicks(1);
