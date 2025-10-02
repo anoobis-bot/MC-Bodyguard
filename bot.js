@@ -214,8 +214,33 @@ bot.commands = {
 					log('Usage: set chest <x> <y> <z> <name>');
 					return;
 				}
+
+				// Check for existing coordinates and remove old entry
+				for (const existingName in chests) {
+					const loc = chests[existingName];
+					if (loc.x === x && loc.y === y && loc.z === z) {
+						delete chests[existingName];
+						break;
+					}
+				}
+
 				chests[name] = new Vec3(x, y, z);
 				log(`Chest '${name}' set to ${chests[name]}`);
+
+				// Save to file
+				try {
+					const chestsToSave = Object.entries(chests).map(([name, loc]) => ({
+						name: name,
+						x: loc.x,
+						y: loc.y,
+						z: loc.z,
+					}));
+					fs.writeFileSync('chests.json', JSON.stringify(chestsToSave, null, 2));
+					log('file saved');
+				} catch (err) {
+					console.error('Error saving chests.json:', err);
+					log('Error saving file.');
+				}
 			} else {
 				log('Usage: set chest <x> <y> <z> <name>');
 			}
@@ -310,6 +335,22 @@ process.on('message', (data)=>{
 });
 
 bot.once("spawn", async ()=>{
+	// Load chests
+    try {
+        const chestsData = fs.readFileSync('chests.json', 'utf8');
+        const chestsFromFile = JSON.parse(chestsData);
+        for (const chest of chestsFromFile) {
+            chests[chest.name] = new Vec3(chest.x, chest.y, chest.z);
+        }
+        console.log('Loaded chests from file.');
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            console.log('chests.json not found, starting with no chests.');
+        } else {
+            console.error('Error loading chests.json:', err);
+        }
+    }
+
 	bot.chat("I'm a robot.");
 	
 	defaultMove = new Movements(bot);
