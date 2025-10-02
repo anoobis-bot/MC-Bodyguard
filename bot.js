@@ -76,7 +76,28 @@ function findAttacker(position=bot.entity.position) {
 }
 
 async function attackEnemy(enemy) {
+	// Debug logging for enemy entity validity
+	console.log("=== ATTACK ENEMY DEBUG ===");
+	console.log("Enemy entity:", enemy ? {
+		id: enemy.id,
+		username: enemy.username,
+		type: enemy.type,
+		kind: enemy.kind,
+		isValid: enemy.isValid,
+		position: enemy.position,
+		valid: enemy.isValid && enemy.position
+	} : "NULL");
+	console.log("Bot entity valid:", bot.entity.isValid);
+	console.log("========================");
+
 	if (isFleeing) return; // Do not attack while fleeing
+	
+	// Check if enemy is still valid before proceeding
+	if (!enemy || !enemy.isValid || !enemy.position) {
+		console.log("WARNING: Invalid enemy entity in attackEnemy, skipping attack");
+		return;
+	}
+
 	const pos = bot.entity.position;
 	const enemyGoal = new goals.GoalNear(pos.x, pos.y, pos.z, 4);
 	const pathToBot = bot.pathfinder.getPathFromTo(defaultMove, enemy.position, enemyGoal);
@@ -497,9 +518,31 @@ bot.on("entityHurt", (entity)=>{
 		sendMessage(`${entity.username} was hurt!`);
 
 		const attacker = findAttacker(bot.entity.position);
+		
+		// Debug logging for entity validity
+		console.log("=== ENTITY HURT DEBUG ===");
+		console.log("Hurt entity:", entity ? {
+			id: entity.id,
+			username: entity.username,
+			type: entity.type,
+			kind: entity.kind,
+			isValid: entity.isValid,
+			position: entity.position
+		} : "NULL");
+		console.log("Attacker found:", attacker ? {
+			id: attacker.id,
+			username: attacker.username,
+			type: attacker.type,
+			kind: attacker.kind,
+			isValid: attacker.isValid,
+			position: attacker.position
+		} : "NULL");
+		console.log("Bot entities count:", Object.keys(bot.entities).length);
+		console.log("========================");
 
 		if (attacker && !targetList.includes(attacker.username)) {
 			targetList.push(attacker.username);
+			console.log(`Added ${attacker.username} to target list`);
 		}
 	}
 });

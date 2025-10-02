@@ -16,6 +16,25 @@ function hasBow(bot) {
 
 async function shoot(bot, target) {
 	if (isShooting) return;  // Prevent overlapping shots
+
+	// Debug logging for target entity validity
+	console.log("=== ARCHERY SHOOT DEBUG ===");
+	console.log("Target entity:", target ? {
+		id: target.id,
+		username: target.username,
+		type: target.type,
+		kind: target.kind,
+		isValid: target.isValid,
+		position: target.position
+	} : "NULL");
+	console.log("========================");
+
+	// Check if target is valid before shooting
+	if (!target || !target.isValid || !target.position) {
+		console.log("WARNING: Invalid target entity in archery.shoot, skipping shot");
+		isShooting = false;
+		return;
+	}
 	
 	isShooting = true;
 	try {
