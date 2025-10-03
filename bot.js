@@ -67,6 +67,7 @@ function findThreat() {
 
 function findAttacker(position=bot.entity.position) {
 	return bot.nearestEntity((entity)=>{
+		if (entity.type !== 'mob' && entity.type !== 'player') return false;
 		if (bossList.includes(entity.username)) return false;
 
 		const distance = entity.position.distanceTo(position);
@@ -540,7 +541,7 @@ bot.on("entityHurt", (entity)=>{
 		console.log("Bot entities count:", Object.keys(bot.entities).length);
 		console.log("========================");
 
-		if (attacker && !targetList.includes(attacker.username)) {
+		if (attacker && attacker.username && !targetList.includes(attacker.username)) {
 			targetList.push(attacker.username);
 			console.log(`Added ${attacker.username} to target list`);
 		}
