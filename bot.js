@@ -206,6 +206,14 @@ async function loop() {
 		return; // Do nothing else while fleeing
 	}
 
+	if (bot.food <= HUNGER_LIMIT) {
+		const enemy = findThreat();
+		if (!enemy) {
+			await eatFood();
+			return;
+		}
+	}
+
 	if (!guarding) return;
 
 	const enemy = findThreat();
@@ -478,11 +486,6 @@ bot.on("whisper", async (username, message)=>{
 });
 
 bot.on("health", async ()=>{
-	// Handle hunger
-	if (bot.food <= HUNGER_LIMIT) {
-		sendMessage(`hunger has reached ${bot.food}!`);
-		await eatFood();
-	}
 
 	// Handle fleeing
 	if (bot.health <= 6 && !isFleeing) {
