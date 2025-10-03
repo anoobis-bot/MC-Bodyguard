@@ -159,14 +159,48 @@ async function handleCombat() {
     if (tactic === 'archery') {
         if (!bot.archery.isShooting()) {
             sendMessage(`Shooting at ${enemy.displayName}!`);
+            console.log(`=== ARCHERY COMBAT DEBUG ===`);
+            console.log(`Setting slowMove for archery, disabling sprint`);
+            console.log(`Previous movements:`, bot.pathfinder.movements ? {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            } : 'none');
+            
             const slowMove = new Movements(bot);
             slowMove.allowSprinting = false;
             bot.pathfinder.setMovements(slowMove);
+            
+            console.log(`After setting slowMove:`, {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            });
+            console.log(`========================`);
+            
             await bot.archery.shoot(enemy);
+            
+            console.log(`=== ARCHERY COMPLETE DEBUG ===`);
+            console.log(`Restoring defaultMove after shooting`);
             bot.pathfinder.setMovements(defaultMove);
+            console.log(`After restoring defaultMove:`, {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            });
+            console.log(`========================`);
         }
     } else { // Melee tactic
+        console.log(`=== MELEE COMBAT DEBUG ===`);
+        console.log(`Ensuring defaultMove for melee combat`);
         bot.pathfinder.setMovements(defaultMove);
+        console.log(`Movements after setting:`, {
+            allowSprinting: bot.pathfinder.movements.allowSprinting,
+            canDig: bot.pathfinder.movements.canDig,
+            canOpenDoors: bot.pathfinder.movements.canOpenDoors
+        });
+        console.log(`========================`);
+        
         if (bot.archery.isShooting()) {
             bot.archery.resetShooting();
         }
@@ -199,21 +233,6 @@ async function handleGuarding() {
 }
 
 async function loop() {
-    // Debug logging for movement state
-    const currentMovements = bot.pathfinder.movements;
-    const movementType = currentMovements === defaultMove ? 'defaultMove' : 'slowMove';
-    const allowSprinting = currentMovements ? currentMovements.allowSprinting : 'unknown';
-    
-    console.log(`=== MOVEMENT DEBUG ===`);
-    console.log(`Movement type: ${movementType}`);
-    console.log(`Allow sprinting: ${allowSprinting}`);
-    console.log(`Guarding: ${guarding}`);
-    console.log(`Fleeing: ${isFleeing}`);
-    console.log(`Current target: ${currentTarget ? currentTarget.username : 'none'}`);
-    console.log(`Bot position: ${bot.entity.position}`);
-    console.log(`Bot velocity: ${bot.entity.velocity}`);
-    console.log(`===================`);
-
 	if (await handleFleeing()) return;
 
 	if (!guarding) {
