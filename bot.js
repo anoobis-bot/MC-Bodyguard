@@ -45,6 +45,10 @@ bot.loadPlugin(meleePlugin);
 bot.loadPlugin(archeryPlugin);
 bot.loadPlugin(armorPlugin);
 
+bot.once('login', () => {
+    defaultMove = new Movements(bot);
+});
+
 bot.getEntity = (name)=>{
 	return bot.nearestEntity((entity)=>{
 		return entity.displayName === name || entity.username === name;
@@ -152,7 +156,7 @@ async function handleCombat() {
     // Set goal only if the target or tactic changes
     if (enemy !== currentTarget || bot.pathfinder.goal === null) {
 	// if (!moved){
-		// moved = 1
+	// 	moved = 1
 		console.log(`=== GOAL SETTING ===`);
 		console.log(`New target: ${enemy.displayName}, Tactic: ${tactic}, Distance: ${distance.toFixed(2)}`);
         currentTarget = enemy;
@@ -285,7 +289,7 @@ bot.commands = {
 		await eatFood(log);
 	},
 
-	"guard": async (username, { log })=>{
+	"guard": async (username, { log }) =>{
 		const player = bot.players[username];
 
 		if (!player) {
@@ -296,15 +300,15 @@ bot.commands = {
 		guardedPlayer = player;
 	},
 
-	"ping": async ({ log })=>{
+	"ping": async ({ log }) =>{
 		log("pong");
 	},
 
-	"status": async ({ log })=>{
+	"status": async ({ log }) =>{
 		log(`❤${bot.health} 🥕${bot.food}`);
 	},
 
-	"stop": async ({ log })=>{
+	"stop": async ({ log }) =>{
 		log("Stopping.");
 		bot.pathfinder.setGoal(null);
 		guarding = false;
@@ -463,7 +467,6 @@ bot.once("spawn", async ()=>{
 
 	bot.chat("I have awoken.");
 	
-	defaultMove = new Movements(bot);
 	bot.pathfinder.setMovements(defaultMove);
 
 	// Wait for a few seconds before starting the main loop
@@ -499,7 +502,7 @@ bot.on("health", async ()=>{
 		sendMessage("Health is critical! Entering runaway mode.");
 		isFleeing = true;
 		guarding = false;
-		bot.pathfinder.setMovements(defaultMove); // Ensure bot can sprint away
+		if (defaultMove) bot.pathfinder.setMovements(defaultMove); // Ensure bot can sprint away
 	} else if (isFleeing && bot.health > 15) {
 		sendMessage("Health recovered. Resuming duties.");
 		isFleeing = false;
