@@ -147,7 +147,7 @@ async function handleCombat() {
     }
 
     const distance = bot.entity.position.distanceTo(enemy.position);
-    const tactic = (bot.archery.canShoot() && distance > 6) ? 'archery' : 'melee';
+    const tactic = (bot.archery.canShoot() && distance > 10) ? 'archery' : 'melee';
 
     // Set goal only if the target or tactic changes
     if (enemy !== currentTarget || bot.pathfinder.goal === null) {
