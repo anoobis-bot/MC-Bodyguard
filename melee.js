@@ -13,15 +13,30 @@ const weaponList = [
 ];
 
 async function equipBestWeapon(bot) {
-	for (itemName of weaponList) {
-		let item = bot.registry.itemsByName[itemName];
-		let hasItem = bot.inventory.count(item.id) > 0;
-		
-		if (hasItem) {
-			await bot.equip(item.id);
-			break;
-		}
-	}
+    // 1. Find the best weapon the bot has in its inventory.
+    let bestWeaponName = null;
+    for (const itemName of weaponList) {
+        const item = bot.registry.itemsByName[itemName];
+        if (bot.inventory.count(item.id) > 0) {
+            bestWeaponName = itemName;
+            break; // The first one found is the best, due to the list order.
+        }
+    }
+
+    // 2. If the bot has no weapons, there's nothing to do.
+    if (!bestWeaponName) {
+        return;
+    }
+
+    // 3. Check if the bot is already holding that weapon.
+    const heldItem = bot.heldItem;
+    if (heldItem && heldItem.name === bestWeaponName) {
+        return; // Already holding the best weapon, no action needed.
+    }
+
+    // 4. If not holding the best weapon, equip it.
+    const weaponToEquip = bot.registry.itemsByName[bestWeaponName];
+    await bot.equip(weaponToEquip.id);
 }
 
 async function punch(bot, target) {
@@ -37,34 +52,54 @@ async function crit(bot, target) {
 	await bot.setControlState("jump", false);
 }
 
-module.exports = (bot)=>{
-	bot.melee = {};
+module.exports = (bot) => {
+    bot.melee = {};
+    let lastAttack = 0;
 
-	bot.melee.crit = async (target)=>{
-		await crit(bot, target);
-	};
+    async function attackWithCooldown(target, attackFunction) {
+        const now = Date.now();
+        const heldItem = bot.heldItem;
+        let cooldown = 0; // Default cooldown for fists or other items
 
-	bot.melee.equip = async ()=>{
-		await equipBestWeapon(bot);
-	};
+        if (heldItem) {
+            if (heldItem.name.includes('sword')) {
+                cooldown = 650; // 13 ticks * 50ms/tick
+            } else if (heldItem.name.includes('axe')) {
+                cooldown = 1000; // 20 ticks * 50ms/tick
+            }
+        }
 
-	bot.melee.punch = async (target)=>{
-		await punch(bot, target);
-	};
+        if (now - lastAttack > cooldown) {
+            await attackFunction(bot, target);
+            lastAttack = now;
+        }
+    }
 
-	bot.commands.crit = async (targetName, { log })=>{
-		const target = bot.getEntity(targetName);
-		
-		if (target) await bot.combat.crit(target);
-		else log(`Couldn't find ${targetName}.`);
+    bot.melee.crit = async (target) => {
+        await attackWithCooldown(target, crit);
     };
 
-	bot.commands.equip = bot.melee.equip;
+    bot.melee.equip = async () => {
+        await equipBestWeapon(bot);
+    };
 
-	bot.commands.punch = async (targetName, { log })=>{
-		const target = bot.getEntity(targetName);
+    bot.melee.punch = async (target) => {
+        await attackWithCooldown(target, punch);
+    };
 
-		if (target) bot.combat.punch(target);
-		else log(`Couldn't find ${targetName}.`);
-	};
+    bot.commands.crit = async (targetName, { log }) => {
+        const target = bot.getEntity(targetName);
+
+        if (target) await bot.melee.crit(target);
+        else log(`Couldn't find ${targetName}.`);
+    };
+
+    bot.commands.equip = bot.melee.equip;
+
+    bot.commands.punch = async (targetName, { log }) => {
+        const target = bot.getEntity(targetName);
+
+        if (target) bot.melee.punch(target);
+        else log(`Couldn't find ${targetName}.`);
+    };
 };

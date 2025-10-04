@@ -14,70 +14,56 @@ function hasBow(bot) {
 	return bot.inventory.count(bowItem.id) > 0;
 }
 
-async function shoot(bot, target) {
-	if (isShooting) return;  // Prevent overlapping shots
+module.exports = (bot) => {
+    bot.loadPlugin(hawkeye.default);
+    bot.archery = {};
+    let lastShotTime = 0;
 
-	// Debug logging for target entity validity
-	console.log("=== ARCHERY SHOOT DEBUG ===");
-	console.log("Target entity:", target ? {
-		id: target.id,
-		username: target.username,
-		type: target.type,
-		kind: target.kind,
-		isValid: target.isValid,
-		position: target.position
-	} : "NULL");
-	console.log("========================");
+    bot.archery.canShoot = () => {
+        return hasArrows(bot) && hasBow(bot);
+    };
 
-	// Check if target is valid before shooting
-	if (!target || !target.isValid || !target.position) {
-		console.log("WARNING: Invalid target entity in archery.shoot, skipping shot");
-		isShooting = false;
-		return;
-	}
-	
-	isShooting = true;
-	try {
-		await bot.hawkEye.oneShot(target, "bow");
-		// wait for the bow to be fully drawn before shooting again
-		await bot.waitForTicks(50);
-	} finally {
-		isShooting = false;
-	}
-};
+    bot.archery.hasArrows = () => {
+        return hasArrows(bot);
+    };
 
-module.exports = (bot)=>{
-	bot.loadPlugin(hawkeye.default);
-	bot.archery = {};
+    bot.archery.hasBow = () => {
+        return hasBow(bot);
+    };
 
-	bot.archery.canShoot = ()=>{
-		return hasArrows(bot) && hasBow(bot);
-	};
+    bot.archery.isShooting = () => {
+        return isShooting;
+    };
 
-	bot.archery.hasArrows = ()=>{
-		return hasArrows(bot);
-	};
+    bot.archery.resetShooting = () => {
+        isShooting = false;
+    };
 
-	bot.archery.hasBow = ()=>{
-		return hasBow(bot);
-	};
+    bot.archery.shoot = async (target) => {
+        const now = Date.now();
+        if (now - lastShotTime < 3000) return; // Enforce 2-second cooldown
 
-	bot.archery.isShooting = ()=>{
-		return isShooting;
-	};
+        if (isShooting) return; // Prevent overlapping shots
 
-	bot.archery.resetShooting = ()=>{
-		isShooting = false;
-	};
+        // Check if target is valid before shooting
+        if (!target || !target.isValid || !target.position) {
+            console.log("WARNING: Invalid target entity in archery.shoot, skipping shot");
+            return;
+        }
 
-	bot.archery.shoot = async (target)=>{
-		await shoot(bot, target);
-	};
+        lastShotTime = now;
+        isShooting = true;
+        try {
+            await bot.hawkEye.oneShot(target, "bow");
+        } finally {
+            isShooting = false;
+        }
+    };
 
-	bot.commands.shoot = async (targetName, { log })=>{
-		const target = bot.getEntity(targetName);
+    bot.commands.shoot = async (targetName, { log }) => {
+        const target = bot.getEntity(targetName);
 
-		if (target) bot.archery.shoot(target);
-		else log(`Couldn't find ${targetName}.`);
-	};
+        if (target) bot.archery.shoot(target);
+        else log(`Couldn't find ${targetName}.`);
+    };
 };

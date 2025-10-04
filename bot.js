@@ -24,6 +24,8 @@ let isFleeing = false;
 let fleeTickCounter = 0;
 const chests = {};
 
+let moved = 0
+
 function getPathDuration(path) {
 	return path.cost; // TODO: calculate duration of path (in seconds)
 }
@@ -76,172 +78,177 @@ function findAttacker(position=bot.entity.position) {
 	});
 }
 
-async function attackEnemy(enemy) {
-	// Debug logging for enemy entity validity
-	console.log("=== ATTACK ENEMY DEBUG ===");
-	console.log("Enemy entity:", enemy ? {
-		id: enemy.id,
-		username: enemy.username,
-		type: enemy.type,
-		kind: enemy.kind,
-		isValid: enemy.isValid,
-		position: enemy.position,
-		valid: enemy.isValid && enemy.position
-	} : "NULL");
-	console.log("Bot entity valid:", bot.entity.isValid);
-	console.log("========================");
+let currentTarget = null;
 
-	if (isFleeing) return; // Do not attack while fleeing
-	
-	// Check if enemy is still valid before proceeding
-	if (!enemy || !enemy.isValid || !enemy.position) {
-		console.log("WARNING: Invalid enemy entity in attackEnemy, skipping attack");
-		return;
-	}
+async function handleFleeing() {
+    if (!isFleeing) return false;
 
-	const pos = bot.entity.position;
-	const enemyGoal = new goals.GoalNear(pos.x, pos.y, pos.z, 4);
-	const pathToBot = bot.pathfinder.getPathFromTo(defaultMove, enemy.position, enemyGoal);
+    fleeTickCounter++;
+    if (fleeTickCounter >= 5) {
+        fleeTickCounter = 0; // Reset counter
 
-	let path = pathToBot.next().value.result;
+        const hostiles = Object.values(bot.entities).filter(entity => entity.kind === 'Hostile mobs' && entity.position.distanceTo(bot.entity.position) < 10);
 
-	while (path.status === 'partial') {
-		path = pathToBot.next().value.result;
-	}
+        if (hostiles.length > 0) {
+            // Check for hostiles within 5 radius
+            const hostilesIn5Radius = hostiles.some(hostile => hostile.position.distanceTo(bot.entity.position) < 5);
 
-	const timeToArrival = getPathDuration(path);
-	const timeToDrawBow = 4;
+            if (!hostilesIn5Radius) {
+                // Eat food if no hostiles are within 5 radius
+                if (bot.food < 20) {
+                    await eatFood(sendMessage);
+                }
+            }
 
-	if (bot.archery.canShoot() && timeToArrival > timeToDrawBow) {
-		// Only shoot if not already shooting
-		if (!bot.archery.isShooting()) {
-			sendMessage(`Shooting at ${enemy}!`);
+            // Calculate the center of mass of the hostiles
+            const centerOfMass = hostiles.reduce((acc, hostile) => acc.add(hostile.position), new Vec3(0, 0, 0));
+            centerOfMass.scale(1 / hostiles.length);
 
-			// slow down
-			const slowMove = new Movements(bot);
-			slowMove.allowSprinting = false;
-			bot.pathfinder.setMovements(slowMove);
+            // Calculate a vector pointing from the center of mass to the bot
+            const fleeVector = bot.entity.position.minus(centerOfMass);
 
-			const goal = new goals.GoalFollow(enemy, 8);
-			bot.pathfinder.setGoal(goal);
+            // If the bot is perfectly centered, pick a random direction to flee
+            if (fleeVector.x === 0 && fleeVector.y === 0 && fleeVector.z === 0) {
+                fleeVector.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+            }
 
-			await bot.archery.shoot(enemy);
+            // Normalize and scale the vector to get a target point 24 blocks away
+            const targetPos = bot.entity.position.plus(fleeVector.normalize().scale(24));
 
-			// restore movement speed
-			bot.pathfinder.setMovements(defaultMove);
-		}
-	} else {
-		// Reset shooting state when switching to melee
-		if (bot.archery.isShooting()) {
-			bot.archery.resetShooting();
-		}
-		
-		let goal = new goals.GoalFollow(enemy, 4);
-		await bot.melee.equip();
+            // Create a simple goal to go to that point
+            const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1);
+            bot.pathfinder.setGoal(goal);
 
-		try {
-			await bot.pathfinder.goto(goal);
-			await bot.melee.punch(enemy);
-		} catch (err) {
-			// ignore pathfinding errors
-		}
-	}
+        } else {
+            // If no hostiles are nearby anymore, clear the goal.
+            bot.pathfinder.setGoal(null);
+            // Eat food if no hostiles are nearby
+            if (bot.food < 20) {
+                await eatFood(sendMessage);
+            }
+        }
+    }
+    return true; // Is fleeing
 }
 
-async function loop() {
-	// Fleeing takes priority over all other actions
-	if (isFleeing) {
-		fleeTickCounter++;
-		if (fleeTickCounter >= 5) {
-			fleeTickCounter = 0; // Reset counter
+async function handleCombat() {
+    const enemy = findThreat();
+    if (!enemy) {
+        if (currentTarget) {
+            // Clear target and goal if the threat is gone
+            currentTarget = null;
+            bot.pathfinder.setGoal(null);
+        }
+        return false; 
+    }
 
-			const hostiles = Object.values(bot.entities).filter(entity => entity.kind === 'Hostile mobs' && entity.position.distanceTo(bot.entity.position) < 10);
+    if (!enemy.isValid || !enemy.position) {
+        return true; 
+    }
 
-			if (hostiles.length > 0) {
-				// Check for hostiles within 5 radius
-				const hostilesIn5Radius = hostiles.some(hostile => hostile.position.distanceTo(bot.entity.position) < 5);
+    const distance = bot.entity.position.distanceTo(enemy.position);
+    const tactic = (bot.archery.canShoot() && distance > 10) ? 'archery' : 'melee';
 
-				if (!hostilesIn5Radius) {
-					// Eat food if no hostiles are within 5 radius
-					if (bot.food < 20) {
-						await eatFood(sendMessage);
-					}
-				}
+    // Set goal only if the target or tactic changes
+    if (enemy !== currentTarget || bot.pathfinder.goal === null) {
+	// if (!moved){
+		// moved = 1
+		console.log(`=== GOAL SETTING ===`);
+		console.log(`New target: ${enemy.displayName}, Tactic: ${tactic}, Distance: ${distance.toFixed(2)}`);
+        currentTarget = enemy;
+        const goalRange = (tactic === 'archery') ? 8 : 4;
+        const goal = new goals.GoalFollow(enemy, goalRange);
+        bot.pathfinder.setGoal(goal);
+    }
 
-				// Calculate the center of mass of the hostiles
-				const centerOfMass = hostiles.reduce((acc, hostile) => acc.add(hostile.position), new Vec3(0, 0, 0));
-				centerOfMass.scale(1 / hostiles.length);
+    // Execute the chosen tactic
+    if (tactic === 'archery') {
+        if (!bot.archery.isShooting()) {
+            sendMessage(`Shooting at ${enemy.displayName}!`);
+            console.log(`=== ARCHERY COMBAT DEBUG ===`);
+            console.log(`Setting slowMove for archery, disabling sprint`);
+            console.log(`Previous movements:`, bot.pathfinder.movements ? {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            } : 'none');
+            
+            // const slowMove = new Movements(bot);
+            // slowMove.allowSprinting = false;
+            // bot.pathfinder.setMovements(slowMove);
+            
+            console.log(`After setting slowMove:`, {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            });
+            console.log(`========================`);
+            
+            await bot.archery.shoot(enemy);
+            
+            console.log(`=== ARCHERY COMPLETE DEBUG ===`);
+            console.log(`Restoring defaultMove after shooting`);
+            bot.pathfinder.setMovements(defaultMove);
+            console.log(`After restoring defaultMove:`, {
+                allowSprinting: bot.pathfinder.movements.allowSprinting,
+                canDig: bot.pathfinder.movements.canDig,
+                canOpenDoors: bot.pathfinder.movements.canOpenDoors
+            });
+            console.log(`========================`);
+        }
+    } else { // Melee tactic
+        console.log(`=== MELEE COMBAT DEBUG ===`);
+        console.log(`Ensuring defaultMove for melee combat`);
+        // bot.pathfinder.setMovements(defaultMove);
+        console.log(`Movements after setting:`, {
+            allowSprinting: bot.pathfinder.movements.allowSprinting,
+            canDig: bot.pathfinder.movements.canDig,
+            canOpenDoors: bot.pathfinder.movements.canOpenDoors
+        });
+        console.log(`========================`);
+        
+        if (bot.archery.isShooting()) {
+            bot.archery.resetShooting();
+        }
+        
+        await bot.melee.equip();
 
-				// Calculate a vector pointing from the center of mass to the bot
-				const fleeVector = bot.entity.position.minus(centerOfMass);
+        if (distance < 5) {
+            await bot.melee.punch(enemy);
+        }
+    }
+    return true; // Enemy was handled
+}
 
-				// If the bot is perfectly centered, pick a random direction to flee
-				if (fleeVector.x === 0 && fleeVector.y === 0 && fleeVector.z === 0) {
-					fleeVector.set(Math.random() - 0.5, 0, Math.random() - 0.5);
-				}
+async function handleGuarding() {
+    if (guardedPlayer && guardedPlayer.entity) {
+        // Clear combat target when switching to guard mode
+        if (currentTarget) currentTarget = null;
 
-				// Normalize and scale the vector to get a target point 24 blocks away
-				const targetPos = bot.entity.position.plus(fleeVector.normalize().scale(24));
-
-				// Create a simple goal to go to that point
-				const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1);
-				bot.pathfinder.setGoal(goal);
-
-				console.log("--- Fleeing Calculation ---");
-				console.log("Is Fleeing:", isFleeing);
-				console.log("Bot Position:", bot.entity.position);
-				console.log("Zombie Position:", hostiles[0].position);
-				console.log("Center of Mass:", centerOfMass);
-				console.log("Flee Vector:", fleeVector);
-				console.log("Target Position:", targetPos);
-			} else {
-				// If no hostiles are nearby anymore, clear the goal.
-				bot.pathfinder.setGoal(null);
-				// Eat food if no hostiles are nearby
-				if (bot.food < 20) {
-					await eatFood(sendMessage);
-				}
-			}
-		}
-		return; // Do nothing else while fleeing
-	}
-
-	if (bot.food <= HUNGER_LIMIT) {
-		const enemy = findThreat();
-		if (!enemy) {
-			await eatFood();
-			return;
-		}
-	}
-
-	if (!guarding) return;
-
-	const enemy = findThreat();
-
-	if (enemy) {
-		await attackEnemy(enemy);
-		return;
-	}
-
-	if (!guardedPlayer || !guardedPlayer.entity) {
-        guardedPlayer = null; // Reset guardedPlayer if entity is gone
-        // Try to find a new boss
+        const goal = new goals.GoalFollow(guardedPlayer.entity, 4);
+        if (!bot.pathfinder.goal || !(bot.pathfinder.goal instanceof goals.GoalFollow) || bot.pathfinder.goal.entity !== guardedPlayer.entity) {
+            bot.pathfinder.setGoal(goal);
+        }
+    } else {
+        bot.pathfinder.setGoal(null);
         const foundBoss = bot.nearestEntity((entity) => bossList.includes(entity.username));
         if (foundBoss) {
             guardedPlayer = bot.players[foundBoss.username];
-        } else {
-            // No boss found, clear goal and wait.
-            bot.pathfinder.setGoal(null);
         }
-        return; // End the loop for this tick.
+    }
+}
+
+async function loop() {
+	if (await handleFleeing()) return;
+
+	if (!guarding) {
+        bot.pathfinder.setGoal(null);
+        return;
     }
 
-	let goal = new goals.GoalFollow(guardedPlayer.entity, 4);
-	try {
-		await bot.pathfinder.goto(goal);
-	} catch (err) {
-		// ignore pathfinding errors
-	}
+    if (await handleCombat()) return;
+    
+    await handleGuarding();
 }
 
 async function eatFood(log=sendMessage) {
