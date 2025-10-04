@@ -173,9 +173,9 @@ async function handleCombat() {
                 canOpenDoors: bot.pathfinder.movements.canOpenDoors
             } : 'none');
             
-            const slowMove = new Movements(bot);
-            slowMove.allowSprinting = false;
-            bot.pathfinder.setMovements(slowMove);
+            // const slowMove = new Movements(bot);
+            // slowMove.allowSprinting = false;
+            // bot.pathfinder.setMovements(slowMove);
             
             console.log(`After setting slowMove:`, {
                 allowSprinting: bot.pathfinder.movements.allowSprinting,
