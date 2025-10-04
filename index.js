@@ -25,11 +25,41 @@ function spawnBot(botName) {
 	bots.push(bot);
 	botsByName[botName] = bot;
 
+    // Heartbeat state
+    let isAlive = true;
+    const heartbeatInterval = setInterval(() => {
+        if (!isAlive) {
+            console.log(`\x1b[31m@${botName} heartbeat failed. Assuming frozen. Restarting...\x1b[0m`);
+            bot.kill(); // The 'exit' handler will take care of respawning
+            return;
+        }
+        isAlive = false; // Assume dead until we get a pong
+        if (bot.connected) {
+            bot.send({ type: 'ping' });
+        }
+    }, 15000); // Check every 15 seconds
+
 	bot.on('message', (data) => {
 		if (data.type === "message") {
 			console.log(`\x1b[32m@${botName}\x1b[0m: ${data.text}`);
 		}
+        if (data.type === "pong") {
+            isAlive = true;
+        }
 	});
+
+    bot.on('exit', (code) => {
+        clearInterval(heartbeatInterval); // IMPORTANT: clean up the interval
+        console.log(`@${botName} exited with code ${code}. Respawning in ${spawnDelay / 1000} seconds...`);
+        
+        const index = bots.indexOf(bot);
+        if (index > -1) {
+            bots.splice(index, 1);
+        }
+        delete botsByName[botName];
+        
+        setTimeout(() => spawnBot(botName), spawnDelay);
+    });
 }
 
 async function spawnBots(amount=1) {

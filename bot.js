@@ -444,6 +444,10 @@ process.on('message', (data)=>{
 		runCommand(data.command, user="admin", log=sendMessage);
 		return;
 	}
+    if (data.type === "ping") {
+        process.send({ type: "pong" });
+        return;
+    }
 
 	console.log(`${botName} recieved unknown message: `, data);
 });
@@ -510,6 +514,7 @@ bot.on("health", async ()=>{
 		bot.pathfinder.setGoal(null); // Clear the runaway goal
 	}
 });
+
 
 bot.on("entityGone", (entity)=>{
 	const targetIndex = targetList.indexOf(entity.username);
