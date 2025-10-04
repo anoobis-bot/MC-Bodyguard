@@ -13,15 +13,30 @@ const weaponList = [
 ];
 
 async function equipBestWeapon(bot) {
-	for (itemName of weaponList) {
-		let item = bot.registry.itemsByName[itemName];
-		let hasItem = bot.inventory.count(item.id) > 0;
-		
-		if (hasItem) {
-			await bot.equip(item.id);
-			break;
-		}
-	}
+    // 1. Find the best weapon the bot has in its inventory.
+    let bestWeaponName = null;
+    for (const itemName of weaponList) {
+        const item = bot.registry.itemsByName[itemName];
+        if (bot.inventory.count(item.id) > 0) {
+            bestWeaponName = itemName;
+            break; // The first one found is the best, due to the list order.
+        }
+    }
+
+    // 2. If the bot has no weapons, there's nothing to do.
+    if (!bestWeaponName) {
+        return;
+    }
+
+    // 3. Check if the bot is already holding that weapon.
+    const heldItem = bot.heldItem;
+    if (heldItem && heldItem.name === bestWeaponName) {
+        return; // Already holding the best weapon, no action needed.
+    }
+
+    // 4. If not holding the best weapon, equip it.
+    const weaponToEquip = bot.registry.itemsByName[bestWeaponName];
+    await bot.equip(weaponToEquip.id);
 }
 
 async function punch(bot, target) {

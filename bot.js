@@ -24,6 +24,8 @@ let isFleeing = false;
 let fleeTickCounter = 0;
 const chests = {};
 
+let moved = 0
+
 function getPathDuration(path) {
 	return path.cost; // TODO: calculate duration of path (in seconds)
 }
@@ -149,6 +151,10 @@ async function handleCombat() {
 
     // Set goal only if the target or tactic changes
     if (enemy !== currentTarget || bot.pathfinder.goal === null) {
+	// if (!moved){
+		// moved = 1
+		console.log(`=== GOAL SETTING ===`);
+		console.log(`New target: ${enemy.displayName}, Tactic: ${tactic}, Distance: ${distance.toFixed(2)}`);
         currentTarget = enemy;
         const goalRange = (tactic === 'archery') ? 8 : 4;
         const goal = new goals.GoalFollow(enemy, goalRange);
@@ -193,7 +199,7 @@ async function handleCombat() {
     } else { // Melee tactic
         console.log(`=== MELEE COMBAT DEBUG ===`);
         console.log(`Ensuring defaultMove for melee combat`);
-        bot.pathfinder.setMovements(defaultMove);
+        // bot.pathfinder.setMovements(defaultMove);
         console.log(`Movements after setting:`, {
             allowSprinting: bot.pathfinder.movements.allowSprinting,
             canDig: bot.pathfinder.movements.canDig,
