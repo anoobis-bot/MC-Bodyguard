@@ -22,6 +22,7 @@ let guardedPlayer;
 let guarding = true;
 let isFleeing = false;
 let fleeTickCounter = 0;
+let unloadTask = null;
 const chests = {};
 
 let moved = 0
@@ -242,8 +243,100 @@ async function handleGuarding() {
     }
 }
 
+async function handleUnload() {
+	const task = unloadTask;
+	if (!task || task.cancelled) return;
+
+	if (task.stage === 'travel') {
+		const distance = bot.entity.position.distanceTo(task.location);
+		if (distance > 1.5) {
+			if (bot.pathfinder.goal !== task.goal) {
+				bot.pathfinder.setGoal(task.goal);
+			}
+			return;
+		}
+
+		if (bot.pathfinder.goal === task.goal) {
+			bot.pathfinder.setGoal(null);
+		}
+		task.stage = 'deposit';
+	}
+
+	if (task.stage === 'deposit') {
+		if (task.processing || task.cancelled) return;
+		task.processing = true;
+		try {
+			const chestBlock = bot.blockAt(task.location);
+			if (!chestBlock || !chestBlock.name.includes('chest')) {
+				task.log("No chest at the specified location.");
+				task.stage = 'failed';
+				return;
+			}
+
+			const chest = await bot.openChest(chestBlock);
+			try {
+				if (task.cancelled) return;
+
+				const items = bot.inventory.items();
+				if (items.length === 0) {
+					task.log("Inventory is empty.");
+				} else {
+					for (const item of items) {
+						await chest.deposit(item.type, null, item.count);
+						if (task.cancelled) break;
+					}
+					if (!task.cancelled) {
+						task.log(`Unloaded all items into chest '${task.name}'.`);
+					}
+				}
+			} finally {
+				chest.close();
+			}
+
+			if (task.cancelled) return;
+			task.stage = 'complete';
+		} catch (err) {
+			if (!task.cancelled) {
+				task.log(`Error while unloading: ${err.message}`);
+				task.stage = 'failed';
+			}
+		} finally {
+			task.processing = false;
+		}
+		return;
+	}
+
+	if (task.stage === 'complete') {
+		if (bot.pathfinder.goal === task.goal) {
+			bot.pathfinder.setGoal(null);
+		}
+		if (!task.completeNotified) {
+			task.log(`Finished unloading at '${task.name}'. Waiting for next command.`);
+			task.completeNotified = true;
+		}
+		return;
+	}
+
+	if (task.stage === 'failed') {
+		if (bot.pathfinder.goal === task.goal) {
+			bot.pathfinder.setGoal(null);
+		}
+		if (!task.failureNotified) {
+			task.log(`Unloading at '${task.name}' failed. Use 'unload ${task.name}' again or switch modes.`);
+			task.failureNotified = true;
+		}
+		return;
+	}
+}
+
 async function loop() {
 	if (await handleFleeing()) return;
+
+	if (unloadTask) {
+		if (await handleCombat()) return;
+		await handleUnload();
+		return;
+	}
 
 	if (!guarding) {
         bot.pathfinder.setGoal(null);
@@ -281,8 +374,13 @@ async function eatFood(log=sendMessage) {
 }
 
 bot.commands = {
-	"continue": async ()=>{
+	"continue": async ({ log })=>{
 		guarding = true;
+		if (unloadTask) unloadTask.cancelled = true;
+		unloadTask = null;
+		if (typeof log === 'function') {
+			log("Resuming guard mode.");
+		}
 	},
 
 	"eat": async ({ log })=>{
@@ -298,6 +396,10 @@ bot.commands = {
 		}
 
 		guardedPlayer = player;
+		guarding = true;
+		if (unloadTask) unloadTask.cancelled = true;
+		unloadTask = null;
+		log(`Now guarding ${username}.`);
 	},
 
 	"ping": async ({ log }) =>{
@@ -312,6 +414,9 @@ bot.commands = {
 		log("Stopping.");
 		bot.pathfinder.setGoal(null);
 		guarding = false;
+		if (unloadTask) unloadTask.cancelled = true;
+		unloadTask = null;
+		currentTarget = null;
 	},
 
 	"set": async function(...args) {
@@ -378,43 +483,27 @@ bot.commands = {
 			return;
 		}
 
-		log(`Unloading to chest '${name}'...`);
-		const originalGuarding = guarding;
-		guarding = false; // Stop guarding while unloading
+		const location = new Vec3(chestLocation.x, chestLocation.y, chestLocation.z);
 
-		try {
-			const goal = new goals.GoalNear(chestLocation.x, chestLocation.y, chestLocation.z, 1);
-			await bot.pathfinder.goto(goal);
-		} catch (err) {
-			log(`Could not pathfind to chest: ${err.message}`);
-			guarding = originalGuarding; // Resume guarding if failed
-			return;
-		}
+		if (unloadTask) unloadTask.cancelled = true;
 
-		const chestBlock = bot.blockAt(chestLocation);
-		if (!chestBlock || !chestBlock.name.includes('chest')) {
-			log("No chest at the specified location.");
-			guarding = originalGuarding; // Resume guarding
-			return;
-		}
+		unloadTask = {
+			name,
+			location,
+			goal: new goals.GoalNear(location.x, location.y, location.z, 1),
+			stage: 'travel',
+			log,
+			processing: false,
+			completeNotified: false,
+			failureNotified: false,
+			cancelled: false,
+		};
 
-		try {
-			const chest = await bot.openChest(chestBlock);
-			const items = bot.inventory.items();
-			if (items.length === 0) {
-				log("Inventory is empty.");
-			} else {
-				for (const item of items) {
-					await chest.deposit(item.type, null, item.count);
-				}
-				log(`Unloaded all items into chest '${name}'.`);
-			}
-			chest.close();
-		} catch (err) {
-			log(`Error while unloading: ${err.message}`);
-		}
+		log(`Entering unload mode for chest '${name}'. Will stay in this mode until you say 'stop' or 'guard'.`);
 
-		guarding = originalGuarding; // Resume guarding
+		guarding = false;
+		currentTarget = null;
+		bot.pathfinder.setGoal(unloadTask.goal);
 	},
 };
 
